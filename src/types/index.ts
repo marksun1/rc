@@ -43,7 +43,7 @@ export interface CompletionHistory {
   reasonForFailure?: string;
 }
 
-export type ViewState = 'dashboard' | 'editor' | 'focus' | 'detail';
+export type ViewState = 'dashboard' | 'editor' | 'focus' | 'detail' | 'analytics';
 
 export interface AppState {
   chains: Chain[];

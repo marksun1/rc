@@ -13,6 +13,7 @@ interface DashboardProps {
   onViewChainDetail: (chainId: string) => void;
   onCancelScheduledSession?: (chainId: string) => void;
   onDeleteChain: (chainId: string) => void;
+  onViewAnalytics?: () => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -24,6 +25,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewChainDetail,
   onCancelScheduledSession,
   onDeleteChain,
+  onViewAnalytics,
 }) => {
   const getScheduledSession = (chainId: string) => {
     return scheduledSessions.find(session => session.chainId === chainId);
@@ -32,8 +34,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Theme toggle in header */}
-        <div className="flex justify-end mb-6">
+        {/* Header with Analytics and Theme toggle */}
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center space-x-4">
+            {chains.length > 0 && onViewAnalytics && (
+              <button
+                onClick={onViewAnalytics}
+                className="flex items-center space-x-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-2xl px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700 transition-all duration-200"
+              >
+                <i className="fas fa-chart-bar text-primary-500"></i>
+                <span className="font-chinese text-gray-700 dark:text-slate-300">数据分析</span>
+              </button>
+            )}
+          </div>
           <ThemeToggle variant="dropdown" showLabel />
         </div>
         

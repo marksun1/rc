@@ -6,6 +6,7 @@ import { ChainEditor } from './components/ChainEditor';
 import { FocusMode } from './components/FocusMode';
 import { ChainDetail } from './components/ChainDetail';
 import { AuxiliaryJudgment } from './components/AuxiliaryJudgment';
+import { AnalyticsView } from './components/AnalyticsView';
 import { storage as localStorageUtils } from './utils/storage';
 import { supabaseStorage } from './utils/supabaseStorage';
 import { getCurrentUser, isSupabaseConfigured } from './lib/supabase';
@@ -141,6 +142,25 @@ function App() {
           </>
         );
 
+      case 'analytics':
+        return (
+          <>
+            <AnalyticsView
+              chains={state.chains}
+              completionHistory={state.completionHistory}
+              onBack={handleBackToDashboard}
+            />
+            {showAuxiliaryJudgment && (
+              <AuxiliaryJudgment
+                chain={state.chains.find(c => c.id === showAuxiliaryJudgment)!}
+                onJudgmentFailure={(reason) => handleAuxiliaryJudgmentFailure(showAuxiliaryJudgment, reason)}
+                onJudgmentAllow={(exceptionRule) => handleAuxiliaryJudgmentAllow(showAuxiliaryJudgment, exceptionRule)}
+                onCancel={() => setShowAuxiliaryJudgment(null)}
+              />
+            )}
+          </>
+        );
+
       default:
         return (
           <>
@@ -153,6 +173,7 @@ function App() {
               onViewChainDetail={handleViewChainDetail}
               onCancelScheduledSession={handleCancelScheduledSession}
               onDeleteChain={handleDeleteChain}
+              onViewAnalytics={() => setState(prev => ({ ...prev, currentView: 'analytics' }))}
             />
             {showAuxiliaryJudgment && (
               <AuxiliaryJudgment
