@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppState, Chain, ScheduledSession, ActiveSession, CompletionHistory } from './types';
 import { Dashboard } from './components/Dashboard';
 import { AuthWrapper } from './components/AuthWrapper';
@@ -9,8 +9,10 @@ import { AuxiliaryJudgment } from './components/AuxiliaryJudgment';
 import { AnalyticsView } from './components/AnalyticsView';
 import { storage as localStorageUtils } from './utils/storage';
 import { supabaseStorage } from './utils/supabaseStorage';
+import { optimizedSupabaseStorage } from './utils/optimizedSupabaseStorage';
 import { getCurrentUser, isSupabaseConfigured } from './lib/supabase';
 import { isSessionExpired } from './utils/time';
+import { StorageDebouncer } from './hooks/useDebounce';
 
 function App() {
   const [state, setState] = useState<AppState>({
@@ -24,11 +26,46 @@ function App() {
   });
 
   const [showAuxiliaryJudgment, setShowAuxiliaryJudgment] = useState<string | null>(null);
+  
+  // Helper function for optimized storage operations
+  const saveWithDebounce = {
+    chains: (chains: Chain[]) => {
+      if (debouncerRef.current) {
+        debouncerRef.current.queueOperation('chains', chains);
+      } else {
+        storage.saveChains(chains);
+      }
+    },
+    sessions: (sessions: ScheduledSession[]) => {
+      if (debouncerRef.current) {
+        debouncerRef.current.queueOperation('sessions', sessions);
+      } else {
+        storage.saveScheduledSessions(sessions);
+      }
+    },
+    history: (history: CompletionHistory[]) => {
+      if (debouncerRef.current) {
+        debouncerRef.current.queueOperation('history', history);
+      } else {
+        storage.saveCompletionHistory(history);
+      }
+    },
+    activeSession: (session: ActiveSession | null) => {
+      if (debouncerRef.current) {
+        debouncerRef.current.queueOperation('activeSession', session);
+      } else {
+        storage.saveActiveSession(session);
+      }
+    }
+  };
 
   // Determine which storage to use based on authentication
   const [storage, setStorage] = useState(localStorageUtils);
-
-  // Check if user is authenticated and switch to Supabase storage
+  
+  // Initialize debounced storage operations for performance
+  const debouncerRef = useRef<StorageDebouncer | null>(null);
+  
+  // Check if user is authenticated and switch to optimized Supabase storage
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -36,21 +73,45 @@ function App() {
         if (isSupabaseConfigured) {
           const user = await getCurrentUser();
           if (user) {
-            setStorage(supabaseStorage);
+            // Use optimized storage with batching and caching for authenticated users
+            setStorage(optimizedSupabaseStorage);
+            
+            // Initialize debouncer for non-blocking storage operations
+            debouncerRef.current = new StorageDebouncer(optimizedSupabaseStorage);
             return;
           }
         }
         
         // 回退到本地存储
         setStorage(localStorageUtils);
+        debouncerRef.current = new StorageDebouncer(localStorageUtils);
       } catch (error) {
         console.warn('Supabase not available, using localStorage:', error);
         setStorage(localStorageUtils);
+        debouncerRef.current = new StorageDebouncer(localStorageUtils);
       }
     };
 
     checkAuth();
   }, []);
+
+  // Flush any pending operations before unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (debouncerRef.current) {
+        debouncerRef.current.flush();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      // Cleanup storage on component unmount
+      if (storage === optimizedSupabaseStorage) {
+        optimizedSupabaseStorage.cleanup();
+      }
+    };
+  }, [storage]);
 
   const renderContent = () => {
     if (!isSupabaseConfigured) {
@@ -237,7 +298,7 @@ function App() {
         if (expiredSessions.length > 0) {
           // Show auxiliary judgment for the first expired session
           setShowAuxiliaryJudgment(expiredSessions[0].chainId);
-          storage.saveScheduledSessions(activeScheduledSessions);
+          saveWithDebounce.sessions(activeScheduledSessions);
           return { ...prev, scheduledSessions: activeScheduledSessions };
         }
         
@@ -293,7 +354,7 @@ function App() {
         updatedChains = [...prev.chains, newChain];
       }
       
-      storage.saveChains(updatedChains);
+      saveWithDebounce.chains(updatedChains);
       
       return {
         ...prev,
@@ -321,7 +382,7 @@ function App() {
 
     setState(prev => {
       const updatedSessions = [...prev.scheduledSessions, scheduledSession];
-      storage.saveScheduledSessions(updatedSessions);
+      saveWithDebounce.sessions(updatedSessions);
       
       // 增加辅助链记录
       const updatedChains = prev.chains.map(chain =>
@@ -329,7 +390,7 @@ function App() {
           ? { ...chain, auxiliaryStreak: chain.auxiliaryStreak + 1 }
           : chain
       );
-      storage.saveChains(updatedChains);
+      saveWithDebounce.chains(updatedChains);
       
       return { 
         ...prev, 
@@ -357,8 +418,8 @@ function App() {
     );
 
     setState(prev => {
-      storage.saveActiveSession(activeSession);
-      storage.saveScheduledSessions(updatedScheduledSessions);
+      saveWithDebounce.activeSession(activeSession);
+      saveWithDebounce.sessions(updatedScheduledSessions);
       
       return {
         ...prev,
@@ -396,9 +457,9 @@ function App() {
 
       const updatedHistory = [...prev.completionHistory, completionRecord];
       
-      storage.saveChains(updatedChains);
-      storage.saveActiveSession(null);
-      storage.saveCompletionHistory(updatedHistory);
+      saveWithDebounce.chains(updatedChains);
+      saveWithDebounce.activeSession(null);
+      saveWithDebounce.history(updatedHistory);
 
       return {
         ...prev,
@@ -437,9 +498,9 @@ function App() {
 
       const updatedHistory = [...prev.completionHistory, completionRecord];
       
-      storage.saveChains(updatedChains);
-      storage.saveActiveSession(null);
-      storage.saveCompletionHistory(updatedHistory);
+      saveWithDebounce.chains(updatedChains);
+      saveWithDebounce.activeSession(null);
+      saveWithDebounce.history(updatedHistory);
 
       return {
         ...prev,
@@ -461,7 +522,7 @@ function App() {
         pausedAt: new Date(),
       };
       
-      storage.saveActiveSession(updatedSession);
+      saveWithDebounce.activeSession(updatedSession);
       
       return {
         ...prev,
@@ -482,7 +543,7 @@ function App() {
         totalPausedTime: prev.activeSession!.totalPausedTime + pauseDuration,
       };
       
-      storage.saveActiveSession(updatedSession);
+      saveWithDebounce.activeSession(updatedSession);
       
       return {
         ...prev,
@@ -508,8 +569,8 @@ function App() {
           : chain
       );
       
-      storage.saveChains(updatedChains);
-      storage.saveScheduledSessions(updatedScheduledSessions);
+      saveWithDebounce.chains(updatedChains);
+      saveWithDebounce.sessions(updatedScheduledSessions);
       
       return {
         ...prev,
@@ -537,8 +598,8 @@ function App() {
           : chain
       );
       
-      storage.saveChains(updatedChains);
-      storage.saveScheduledSessions(updatedScheduledSessions);
+      saveWithDebounce.chains(updatedChains);
+      saveWithDebounce.sessions(updatedScheduledSessions);
       
       return {
         ...prev,
@@ -567,7 +628,7 @@ function App() {
           : chain
       );
       
-      storage.saveChains(updatedChains);
+      saveWithDebounce.chains(updatedChains);
       
       return {
         ...prev,
@@ -614,11 +675,11 @@ function App() {
         : prev.activeSession;
       
       // Save to storage
-      storage.saveChains(updatedChains);
-      storage.saveScheduledSessions(updatedScheduledSessions);
-      storage.saveCompletionHistory(updatedHistory);
+      saveWithDebounce.chains(updatedChains);
+      saveWithDebounce.sessions(updatedScheduledSessions);
+      saveWithDebounce.history(updatedHistory);
       if (!updatedActiveSession) {
-        storage.saveActiveSession(null);
+        saveWithDebounce.activeSession(null);
       }
       
       return {

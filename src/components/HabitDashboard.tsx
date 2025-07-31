@@ -3,6 +3,7 @@ import { Chain, CompletionHistory } from '../types';
 import { StreakProgress } from './StreakProgress';
 import { HabitHeatmap } from './HabitHeatmap';
 import { HabitStats } from './HabitStats';
+import { useAnalyticsCache } from '../hooks/useAnalyticsCache';
 
 interface HabitDashboardProps {
   chain: Chain;
@@ -19,83 +20,31 @@ export const HabitDashboard: React.FC<HabitDashboardProps> = ({
   monthlyGoal = 30,
   className = ""
 }) => {
-  // Helper functions to process data
-  const getWeeklyCompletions = (): number => {
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    
-    return completionHistory.filter(
-      h => h.chainId === chain.id && 
-           h.wasSuccessful && 
-           new Date(h.completedAt) >= oneWeekAgo
-    ).length;
-  };
+  // Use cached analytics data - replaces all previous O(n) filtering operations
+  // with memoized results that persist across re-renders
+  const {
+    weeklyCompletions,
+    monthlyCompletions,
+    successRate,
+    bestStreak,
+    heatmapData,
+    chainHistory
+  } = useAnalyticsCache(chain, completionHistory);
 
-  const getMonthlyCompletions = (): number => {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-    
-    return completionHistory.filter(
-      h => h.chainId === chain.id && 
-           h.wasSuccessful && 
-           new Date(h.completedAt) >= oneMonthAgo
-    ).length;
-  };
-
-  const generateHeatmapData = () => {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const dates: string[] = [];
-    const current = new Date(thirtyDaysAgo);
-    
-    while (current <= new Date()) {
-      dates.push(current.toISOString().split('T')[0]);
-      current.setDate(current.getDate() + 1);
-    }
-
-    return dates.map(date => {
-      const dayHistory = completionHistory.find(
-        h => h.chainId === chain.id && 
-             h.completedAt.toISOString().split('T')[0] === date
-      );
-      
-      return {
-        date,
-        completed: dayHistory?.wasSuccessful || false,
-        streak: dayHistory ? chain.currentStreak : undefined
-      };
-    });
-  };
-
-  const calculateSuccessRate = (): number => {
-    const chainHistory = completionHistory.filter(h => h.chainId === chain.id);
-    if (chainHistory.length === 0) return 0;
-    
-    const successful = chainHistory.filter(h => h.wasSuccessful).length;
-    return Math.round((successful / chainHistory.length) * 100);
-  };
-
-  const getBestStreak = (): number => {
-    // This would typically come from historical data
-    // For now, we'll use current streak or a calculated value
-    return Math.max(chain.currentStreak, chain.auxiliaryStreak);
-  };
-
-  const weeklyCompletions = getWeeklyCompletions();
-  const monthlyCompletions = getMonthlyCompletions();
-  const heatmapData = generateHeatmapData();
-  const successRate = calculateSuccessRate();
-  const bestStreak = getBestStreak();
+  // Pre-calculate date boundaries once to avoid repeated calculations
+  const now = Date.now();
+  const oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+  const oneMonthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+  
+  // Use cached chainHistory to avoid re-filtering the entire completionHistory
+  const weeklyAttempts = chainHistory.filter(h => new Date(h.completedAt) >= oneWeekAgo).length;
+  const monthlyAttempts = chainHistory.filter(h => new Date(h.completedAt) >= oneMonthAgo).length;
 
   const weeklyStats = {
     period: "本周",
     completed: weeklyCompletions,
     goal: weeklyGoal,
-    totalAttempts: completionHistory.filter(
-      h => h.chainId === chain.id && 
-           new Date(h.completedAt) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    ).length,
+    totalAttempts: weeklyAttempts,
     currentStreak: chain.currentStreak,
     bestStreak,
     successRate
@@ -105,17 +54,14 @@ export const HabitDashboard: React.FC<HabitDashboardProps> = ({
     period: "本月",
     completed: monthlyCompletions,
     goal: monthlyGoal,
-    totalAttempts: completionHistory.filter(
-      h => h.chainId === chain.id && 
-           new Date(h.completedAt) >= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    ).length,
+    totalAttempts: monthlyAttempts,
     currentStreak: chain.currentStreak,
     bestStreak,
     successRate
   };
 
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  // Use consistent date calculation with the cached heatmap data
+  const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
   return (
     <div className={`space-y-6 ${className}`}>

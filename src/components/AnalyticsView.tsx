@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Chain, CompletionHistory } from '../types';
 import { HabitDashboard } from './HabitDashboard';
 import { StreakProgress } from './StreakProgress';
@@ -22,22 +22,33 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
 
   const selectedChain = chains.find(c => c.id === selectedChainId);
 
-  // Calculate overall statistics
-  const calculateOverallStats = () => {
+  // Memoized overall statistics - prevents recalculation on chain selection changes
+  const overallStats = useMemo(() => {
+    // Single pass through completion history for all calculations
     const now = new Date();
     const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const weeklyCompletions = completionHistory.filter(
-      h => h.wasSuccessful && new Date(h.completedAt) >= oneWeekAgo
-    ).length;
-
-    const monthlyCompletions = completionHistory.filter(
-      h => h.wasSuccessful && new Date(h.completedAt) >= oneMonthAgo
-    ).length;
-
-    const totalSuccess = completionHistory.filter(h => h.wasSuccessful).length;
+    let weeklyCompletions = 0;
+    let monthlyCompletions = 0;
+    let totalSuccess = 0;
     const totalAttempts = completionHistory.length;
+
+    // Single O(n) pass instead of multiple O(n) filter operations
+    for (const history of completionHistory) {
+      if (history.wasSuccessful) {
+        totalSuccess++;
+        const historyDate = new Date(history.completedAt);
+        
+        if (historyDate >= oneWeekAgo) {
+          weeklyCompletions++;
+        }
+        if (historyDate >= oneMonthAgo) {
+          monthlyCompletions++;
+        }
+      }
+    }
+
     const successRate = totalAttempts > 0 ? Math.round((totalSuccess / totalAttempts) * 100) : 0;
 
     return {
@@ -47,9 +58,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
       totalSuccess,
       totalAttempts
     };
-  };
-
-  const overallStats = calculateOverallStats();
+  }, [completionHistory]); // Only recalculate when completion history changes
 
   if (chains.length === 0) {
     return (
