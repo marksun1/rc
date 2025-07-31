@@ -149,8 +149,3 @@ npm run preview
   <img width="700" alt="RSIP 设计图" src="https://github.com/user-attachments/assets/29b5274a-e207-476a-ba31-e45affb73bb6" />
 
 
-## 📞 联系方式
-
-如有问题或建议，发送邮件至：kenx@andrew.cmu.edu
-<br>
-我的知乎账号：https://www.zhihu.com/people/blues-68-53
